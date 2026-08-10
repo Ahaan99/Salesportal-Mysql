@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* Meridian design tokens */
+:root {
+  --background: #faf7f1;
+  --foreground: #191c19;
+  --card: #fffdf8;
+  --card-foreground: #191c19;
+  --primary: #0e4c38;
+  --primary-foreground: #faf7f1;
+  --secondary: #efe9dd;
+  --secondary-foreground: #191c19;
+  --muted: #f1ece2;
+  --muted-foreground: #68705f;
+  --accent: #e8a33d;
+  --accent-foreground: #191c19;
+  --destructive: #bf3f26;
+  --destructive-foreground: #faf7f1;
+  --border: #e3dccb;
+  --input: #e3dccb;
+  --ring: #0e4c38;
+  --ink: #12241c;
+  --ink-soft: #1c3329;
+  --ink-foreground: #ece7da;
+  --ink-muted: #8fa398;
+  --radius: 1rem;
+}
+
+@theme inline {
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  /* DM Sans fallback covers glyphs Instrument Serif lacks (e.g. the rupee sign) */
+  --font-serif: var(--font-instrument), var(--font-dm-sans), ui-serif, Georgia, serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-ink-muted: var(--ink-muted);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.5rem);
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-sm: calc(var(--radius) - 0.5rem);
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.texture-grid {
+  background-image:
+    linear-gradient(to right, rgba(20, 36, 28, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(20, 36, 28, 0.05) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.scrollbar-slim::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}

@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Builds
+.next/
+out/
+dist/
+
+# Environment & secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Local dev tooling (not part of the app)
+file-server.py
+
+# Logs & OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Legacy Supabase-era scripts with credentials - keep local only
+backend/db/fix-return-refund-consistency.js
+backend/db/migrate-and-seed-refunds.js
+backend/db/seed-client-returns.js
+backend/db/seed-refunds.js

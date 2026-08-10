@@ -1,0 +1,18 @@
+-- Chunk G: wallet sync triggers - NOT APPLIED.
+-- Reason: salesportal_app lacks SUPER privilege (binary logging enabled),
+-- so CREATE TRIGGER fails with ERROR 1419 unless root runs:
+--   SET GLOBAL log_bin_trust_function_creators = 1;
+--
+-- DECISION (per migration plan Step 2): wallet sync is reimplemented in
+-- backend JavaScript instead. See src/services/wallet.js -> syncWallet(officerId),
+-- which is called after every commissions INSERT/UPDATE. The SQL it runs:
+--
+--   INSERT IGNORE INTO officer_wallets (officer_id) VALUES (?);
+--   UPDATE officer_wallets SET
+--     pending_amount   = COALESCE((SELECT SUM(amount) FROM commissions WHERE officer_id = ? AND status = 'pending'), 0),
+--     available_amount = COALESCE((SELECT SUM(amount) FROM commissions WHERE officer_id = ? AND status = 'available'), 0),
+--     withdrawn_amount = COALESCE((SELECT SUM(amount) FROM commissions WHERE officer_id = ? AND status = 'settled'), 0),
+--     total_earned     = COALESCE((SELECT SUM(amount) FROM commissions WHERE officer_id = ?), 0)
+--   WHERE officer_id = ?;
+--
+-- This file is kept for documentation only.

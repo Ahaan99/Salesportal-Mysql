@@ -1,0 +1,14 @@
+# Never apply text/EOL conversion to binary assets
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+backend/uploads/** binary
+
+# Keep SQL dumps exactly as generated
+*.sql -text
