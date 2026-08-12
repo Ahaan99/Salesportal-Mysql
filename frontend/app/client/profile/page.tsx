@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Building2, CheckCircle2, Landmark, MapPin, ShieldCheck } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Building2, CheckCircle2, Landmark, Loader2, MapPin, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input, Textarea } from "@/components/ui/input";
@@ -68,13 +67,22 @@ const SECTIONS: { title: string; description: string; icon: typeof Building2; fi
 ];
 
 export default function CompanyProfilePage() {
-  const { profile, saveProfile } = useVendorStore();
+  const { profile, profileLoading, saveProfile } = useVendorStore();
   const [form, setForm] = useState<CompanyProfile>(profile);
   // Phone is edited as country + 10-digit national, stored canonically.
   const [phoneParts, setPhoneParts] = useState(() => splitPhone(profile.phone));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Sync the form when the profile arrives from the API (only while untouched).
+  useEffect(() => {
+    if (!dirty) {
+      setForm(profile);
+      setPhoneParts(splitPhone(profile.phone));
+    }
+  }, [profile, dirty]);
 
   useEffect(() => {
     if (!saved) return;
@@ -95,14 +103,26 @@ export default function CompanyProfilePage() {
     set("phone", canonical);
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const result = saveProfile(form);
+    if (saving) return;
+    setSaving(true);
+    const result = await saveProfile(form);
+    setSaving(false);
     setErrors(result.errors);
     if (result.ok) {
       setSaved(true);
       setDirty(false);
     }
+  }
+
+  if (profileLoading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center" role="status">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
+        <span className="sr-only">Loading profile</span>
+      </div>
+    );
   }
 
   return (
@@ -113,9 +133,13 @@ export default function CompanyProfilePage() {
             {profile.companyName[0] ?? "V"}
           </span>
           <div>
-            <p className="font-serif text-xl leading-tight">{profile.companyName}</p>
+            <p className="font-serif text-xl leading-tight">
+              {profile.companyName || "Your company"}
+            </p>
             <p className="text-sm text-muted-foreground">
-              {profile.categories.join(" · ")}
+              {profile.categories.length > 0
+                ? profile.categories.join(" · ")
+                : "Complete your profile to start selling"}
             </p>
           </div>
         </div>
@@ -126,9 +150,9 @@ export default function CompanyProfilePage() {
               Profile saved
             </span>
           )}
-          <Badge variant="success">Verified seller</Badge>
-          <Button type="submit" disabled={!dirty}>
-            Save changes
+          <Button type="submit" disabled={!dirty || saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+            {saving ? "Saving..." : "Save changes"}
           </Button>
         </div>
       </div>

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
-import { useVendorStore } from "@/lib/store/vendor-store";
-import type { Product, StockAdjustmentType } from "@/lib/types";
+import { useVendorStore, type InventoryProduct } from "@/lib/store/vendor-store";
+import type { StockAdjustmentType } from "@/lib/types";
 
 const TYPES: { value: StockAdjustmentType; label: string; hint: string }[] = [
   { value: "restock", label: "Restock", hint: "Adds units to inventory" },
@@ -17,7 +18,7 @@ export function RestockModal({
   product,
   onClose,
 }: {
-  product: Product | null;
+  product: InventoryProduct | null;
   onClose: () => void;
 }) {
   const { adjustStock } = useVendorStore();
@@ -25,6 +26,7 @@ export function RestockModal({
   const [qty, setQty] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -32,14 +34,22 @@ export function RestockModal({
       setQty("");
       setNote("");
       setError(null);
+      setSubmitting(false);
     }
   }, [product]);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!product) return;
+    if (!product || submitting) return;
     const n = Number(qty);
-    const result = adjustStock(product.id, type, n, note);
+    if (!Number.isInteger(n) || n <= 0) {
+      setError("Quantity must be a whole number greater than 0.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    const result = await adjustStock(product.id, type, n, note);
+    setSubmitting(false);
     if (result.ok) {
       onClose();
     } else {
@@ -119,10 +129,13 @@ export function RestockModal({
         )}
 
         <div className="mt-1 flex justify-end gap-3">
-          <Button type="button" variant="outline" onClick={onClose}>
+          <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button type="submit">Apply adjustment</Button>
+          <Button type="submit" disabled={submitting}>
+            {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />}
+            {submitting ? "Applying..." : "Apply adjustment"}
+          </Button>
         </div>
       </form>
     </Modal>

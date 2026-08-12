@@ -9,12 +9,17 @@ const { Router } = require("express");
     getDocumentUrl,
     } = require("../controllers/kyc.controller");
     const { clientOverview } = require("../controllers/overview.controller");
+    const { getMyProfile, saveMyProfile } = require("../controllers/profile.controller");
 
     const router = Router();
     router.use(requireAuth, requireRole("client"));
 
     // Live dashboard overview (scoped to the authenticated client)
     router.get("/overview", clientOverview);
+
+    // Company profile (one row per vendor, owner-scoped)
+    router.get("/profile", getMyProfile);
+    router.put("/profile", saveMyProfile);
 
     // KYC for client / vendor users
     router.get("/kyc/me",               getMyKyc);

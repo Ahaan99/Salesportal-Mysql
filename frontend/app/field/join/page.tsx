@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { DEFAULT_COUNTRY_ISO, validatePhoneIntl } from "@/lib/validation/phone";
 import { PhoneInput } from "@/components/forms/phone-input";
+import { api, ApiError } from "@/lib/api/client";
 
 const perks = [
   {
@@ -69,6 +70,30 @@ export default function JoinPage() {
   const [city, setCity] = useState("");
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [applicationCode, setApplicationCode] = useState<string | null>(null);
+
+  async function submitApplication(e: React.FormEvent) {
+    e.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const res = await api<{ code: string; duplicate: boolean }>(
+        "/api/public/join-applications",
+        { method: "POST", body: { category, name, phone, city } }
+      );
+      setApplicationCode(res.code);
+      setStep(2);
+    } catch (err) {
+      setSubmitError(
+        err instanceof ApiError ? err.message : "Could not submit your application. Try again."
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   function detectLocation() {
     setLocationError(null);
@@ -137,8 +162,8 @@ export default function JoinPage() {
             Any city. Any street. <span className="italic text-accent">Your</span> beat.
           </h2>
           <p className="max-w-lg text-pretty text-sm leading-relaxed text-ink-muted md:text-base">
-            Sell real products to real shops in your own neighbourhood. Zepto-style hustle,
-            Recruweb-style backing — 139 officers already on routes today.
+            Sell real products to real shops in your own neighbourhood — with
+            Recruweb backing you from day one.
           </p>
         </div>
       </section>
@@ -292,10 +317,7 @@ export default function JoinPage() {
                   exit={{ opacity: 0, y: -12 }}
                   transition={{ duration: 0.3 }}
                   className="flex flex-col gap-4"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setStep(2);
-                  }}
+                  onSubmit={submitApplication}
                 >
                   <div className="flex flex-col gap-1.5">
                     <label htmlFor="join-city" className="text-sm font-medium">
@@ -337,12 +359,17 @@ export default function JoinPage() {
                         : "Any location works — we build your route around it."}
                     </p>
                   </div>
+                  {submitError && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {submitError}
+                    </p>
+                  )}
                   <div className="flex gap-3">
-                    <Button type="button" variant="outline" onClick={() => setStep(0)}>
+                    <Button type="button" variant="outline" onClick={() => setStep(0)} disabled={submitting}>
                       Back
                     </Button>
-                    <Button type="submit" size="lg" className="flex-1">
-                      Submit application
+                    <Button type="submit" size="lg" className="flex-1" disabled={submitting}>
+                      {submitting ? "Submitting…" : "Submit application"}
                     </Button>
                   </div>
                 </motion.form>
@@ -367,9 +394,9 @@ export default function JoinPage() {
                       ? `Our team will call ${phone || "you"} within 24 hours to activate your independent seller account. Start selling right after verification.`
                       : `Our onboarding team will call ${phone || "you"} within 24 hours to schedule training${city ? ` in ${city}` : ""}. Keep your ID proof handy.`}
                   </p>
-                  <Badge variant="accent">
-                    {category === "independent" ? "Application #IND-1042" : "Application #FSO-2611"}
-                  </Badge>
+                  {applicationCode && (
+                    <Badge variant="accent">Application #{applicationCode}</Badge>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

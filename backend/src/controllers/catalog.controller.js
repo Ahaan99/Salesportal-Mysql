@@ -267,7 +267,7 @@ async function getMyProducts(req, res, next) {
 
     const { data, error, count } = await supabaseAdmin
       .from("products")
-      .select("id, name, brand, price, mrp, stock, sku, status, images, rating, review_note, reviewed_at, created_at, description, category_id", { count: "exact" })
+      .select("id, name, brand, price, mrp, stock, sku, status, images, rating, review_note, reviewed_at, created_at, description, category_id, category:categories(name)", { count: "exact" })
       .eq("owner_id", req.user.id)
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -279,4 +279,94 @@ async function getMyProducts(req, res, next) {
   }
 }
 
-module.exports = { getCategories, createProduct, updateProduct, deleteProduct, getMyProducts };
+// ---- stock adjustments (vendor inventory, full audit trail) ----
+const ADJUSTMENT_TYPES = ["restock", "correction", "damage"];
+
+async function adjustStock(req, res, next) {
+  try {
+    const id = String(req.params.id || "");
+    if (!UUID_RE.test(id)) return res.status(404).json({ error: "Product not found." });
+
+    const type = String(req.body?.type ?? "");
+    const qty = Number(req.body?.qty);
+    const note = String(req.body?.note ?? "").trim().slice(0, 500);
+
+    const errors = {};
+    if (!ADJUSTMENT_TYPES.includes(type)) errors.type = "Choose a valid adjustment type.";
+    if (!Number.isInteger(qty) || qty <= 0 || qty > 1000000)
+      errors.qty = "Quantity must be a whole number greater than 0.";
+    if (Object.keys(errors).length) {
+      return res.status(422).json({ error: "Please fix the highlighted fields.", fields: errors });
+    }
+
+    // Ownership enforced in the query itself — 404 for anything not yours.
+    const { data: product, error: readErr } = await supabaseAdmin
+      .from("products")
+      .select("id, name, stock, status")
+      .eq("id", id)
+      .eq("owner_id", req.user.id)
+      .maybeSingle();
+    if (readErr) throw Object.assign(new Error(readErr.message), { publicMessage: "Could not load the product." });
+    if (!product) return res.status(404).json({ error: "Product not found." });
+
+    const delta = type === "restock" ? qty : -qty;
+    const resulting = product.stock + delta;
+    if (resulting < 0) {
+      return res.status(422).json({
+        error: `Cannot remove ${qty} units — only ${product.stock} in stock.`,
+        fields: { qty: `Only ${product.stock} units in stock.` },
+      });
+    }
+
+    // Optimistic concurrency: only applies if stock is unchanged since read.
+    const { data: updated, error: upErr } = await supabaseAdmin
+      .from("products")
+      .update({ stock: resulting, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("owner_id", req.user.id)
+      .eq("stock", product.stock)
+      .select("id, stock")
+      .maybeSingle();
+    if (upErr) throw Object.assign(new Error(upErr.message), { publicMessage: "Could not update stock." });
+    if (!updated) {
+      return res.status(409).json({ error: "Stock changed while you were editing. Please refresh and try again." });
+    }
+
+    const { data: adjustment, error: insErr } = await supabaseAdmin
+      .from("stock_adjustments")
+      .insert({
+        owner_id: req.user.id,
+        product_id: id,
+        product_name: product.name,
+        type,
+        delta,
+        resulting_stock: resulting,
+        note,
+      })
+      .select("id, product_id, product_name, type, delta, resulting_stock, note, created_at")
+      .single();
+    if (insErr) throw Object.assign(new Error(insErr.message), { publicMessage: "Could not record the adjustment." });
+
+    res.status(201).json({ product: updated, adjustment });
+  } catch (e) {
+    next(e);
+  }
+}
+
+async function getStockAdjustments(req, res, next) {
+  try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 100));
+    const { data, error } = await supabaseAdmin
+      .from("stock_adjustments")
+      .select("id, product_id, product_name, type, delta, resulting_stock, note, created_at")
+      .eq("owner_id", req.user.id)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw Object.assign(new Error(error.message), { publicMessage: "Could not load stock adjustments." });
+    res.json({ adjustments: data });
+  } catch (e) {
+    next(e);
+  }
+}
+
+module.exports = { getCategories, createProduct, updateProduct, deleteProduct, getMyProducts, adjustStock, getStockAdjustments };

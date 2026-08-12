@@ -1,15 +1,18 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Download, PackageOpen, Boxes, PackageX } from "lucide-react";
+import { AlertCircle, AlertTriangle, Download, Loader2, PackageOpen, Boxes, PackageX } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { StatCard } from "@/components/portal/stat-card";
 import { RestockModal } from "@/components/client/restock-modal";
-import { LOW_STOCK_THRESHOLD, useVendorStore } from "@/lib/store/vendor-store";
+import {
+  LOW_STOCK_THRESHOLD,
+  useVendorStore,
+  type InventoryProduct,
+} from "@/lib/store/vendor-store";
 import { formatINR } from "@/lib/utils";
-import type { Product } from "@/lib/types";
 
 const adjBadge = {
   restock: "success",
@@ -18,13 +21,13 @@ const adjBadge = {
   sale: "outline",
 } as const;
 
-function stockLevel(p: Product): { label: string; variant: "success" | "warning" | "destructive" } {
+function stockLevel(p: InventoryProduct): { label: string; variant: "success" | "warning" | "destructive" } {
   if (p.stock === 0) return { label: "Out of stock", variant: "destructive" };
   if (p.stock < LOW_STOCK_THRESHOLD) return { label: "Low stock", variant: "warning" };
   return { label: "Healthy", variant: "success" };
 }
 
-function exportCsv(products: Product[]) {
+function exportCsv(products: InventoryProduct[]) {
   const header = "Product ID,Name,Category,Status,Stock,Selling Price,Stock Value";
   const rows = products.map((p) =>
     [p.id, `"${p.name.replace(/"/g, '""')}"`, p.category, p.status, p.stock, p.price, p.stock * p.price].join(",")
@@ -39,8 +42,8 @@ function exportCsv(products: Product[]) {
 }
 
 export default function InventoryPage() {
-  const { products, adjustments } = useVendorStore();
-  const [restocking, setRestocking] = useState<Product | null>(null);
+  const { products, adjustments, inventoryLoading, inventoryError } = useVendorStore();
+  const [restocking, setRestocking] = useState<InventoryProduct | null>(null);
 
   const totals = useMemo(() => {
     const units = products.reduce((s, p) => s + p.stock, 0);
@@ -51,6 +54,27 @@ export default function InventoryPage() {
   }, [products]);
 
   const alerts = products.filter((p) => p.stock < LOW_STOCK_THRESHOLD);
+
+  if (inventoryLoading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center" role="status">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
+        <span className="sr-only">Loading inventory</span>
+      </div>
+    );
+  }
+
+  if (inventoryError) {
+    return (
+      <div
+        role="alert"
+        className="flex items-center gap-3 rounded-xl border border-destructive/40 bg-destructive/5 px-5 py-4 text-sm text-destructive"
+      >
+        <AlertCircle className="h-5 w-5 shrink-0" aria-hidden />
+        {inventoryError}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

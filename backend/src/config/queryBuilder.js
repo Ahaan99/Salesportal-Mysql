@@ -177,10 +177,11 @@ class QueryBuilder {
     if (this._offset != null) sql += ` OFFSET ${this._offset}`;
     const [rows] = await pool.query(sql, w.params);
 
-    // stitch embedded relations
+    // stitch embedded relations (result goes under the alias, e.g. "category:categories(name)")
     for (const e of parsed.embeds) {
+      const out = e.alias || e.name;
       const def = relDefs[e.name];
-      if (!def) { for (const r of rows) r[e.name] = null; continue; }
+      if (!def) { for (const r of rows) r[out] = null; continue; }
       const relCols = e.cols === "*" ? "*" : U.parseSelect(e.cols).cols.map(U.colSql).join(", ");
       if (def.kind === "one") {
         const keys = [...new Set(rows.map((r) => r[def.localKey]).filter(Boolean))];
@@ -195,7 +196,7 @@ class QueryBuilder {
         const byId = Object.fromEntries(relRows.map((r) => [r.id, r]));
         for (const r of rows) {
           const rel = byId[r[def.localKey]] || null;
-          r[e.name] = rel ? U.rowOut(rel) : null;
+          r[out] = rel ? U.rowOut(rel) : null;
         }
       } else {
         const ids = [...new Set(rows.map((r) => r.id).filter(Boolean))];
@@ -209,7 +210,7 @@ class QueryBuilder {
         }
         const grouped = {};
         for (const r of relRows) (grouped[r[def.fk]] ||= []).push(U.rowOut(r));
-        for (const r of rows) r[e.name] = grouped[r.id] || [];
+        for (const r of rows) r[out] = grouped[r.id] || [];
       }
     }
     // strip hidden helper cols (after ALL embeds are stitched — an earlier

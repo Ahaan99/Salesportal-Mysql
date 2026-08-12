@@ -58,14 +58,15 @@ function splitTopLevel(sel) {
   return parts;
 }
 
-// Parse a select string into { cols: string[], embeds: [{name, cols}] }
+// Parse a select string into { cols: string[], embeds: [{name, alias, cols}] }
+// Supports supabase alias syntax for embeds: "category:categories(name)".
 function parseSelect(sel) {
   const cols = [];
   const embeds = [];
   for (const part of splitTopLevel(sel || "*")) {
-    const m = part.match(/^([a-zA-Z0-9_]+)\s*\((.*)\)$/s);
+    const m = part.match(/^(?:([a-zA-Z0-9_]+)\s*:\s*)?([a-zA-Z0-9_]+)\s*\((.*)\)$/s);
     if (m) {
-      embeds.push({ name: m[1], cols: m[2].trim() || "*" });
+      embeds.push({ name: m[2], alias: m[1] || m[2], cols: m[3].trim() || "*" });
     } else {
       cols.push(part);
     }

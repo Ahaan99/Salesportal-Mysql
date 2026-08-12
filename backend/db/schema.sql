@@ -179,3 +179,47 @@ returns json language sql stable as $$
   from public.orders
   where client_id = p_client_id;
 $$;
+
+-- ---------- Stock adjustments (vendor inventory audit trail)
+create table if not exists public.stock_adjustments (
+  id              uuid primary key default gen_random_uuid(),
+  owner_id        uuid not null references auth.users(id) on delete cascade,
+  product_id      uuid references public.products(id) on delete set null,
+  product_name    text not null,              -- snapshot: survives product deletion
+  type            text not null check (type in ('restock','correction','damage','sale')),
+  delta           int not null check (delta <> 0),
+  resulting_stock int not null check (resulting_stock >= 0),
+  note            text not null default '',
+  created_at      timestamptz not null default now()
+);
+
+create index if not exists idx_stock_adj_owner on public.stock_adjustments(owner_id, created_at desc);
+create index if not exists idx_stock_adj_product on public.stock_adjustments(product_id);
+
+alter table public.stock_adjustments enable row level security;
+
+-- ---------- Company profiles (vendor business profile, one row per vendor)
+create table if not exists public.company_profiles (
+  owner_id       uuid primary key references auth.users(id) on delete cascade,
+  company_name   text not null default '',
+  legal_name     text not null default '',
+  tagline        text not null default '',
+  about          text not null default '',
+  contact_name   text not null default '',
+  email          text not null default '',
+  phone          text not null default '',
+  website        text not null default '',
+  gstin          text not null default '',
+  pan            text not null default '',
+  address_line   text not null default '',
+  city           text not null default '',
+  state          text not null default '',
+  pincode        text not null default '',
+  bank_name      text not null default '',
+  account_number text not null default '',
+  ifsc           text not null default '',
+  categories     text[] not null default '{}',
+  updated_at     timestamptz not null default now()
+);
+
+alter table public.company_profiles enable row level security;

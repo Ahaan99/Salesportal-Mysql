@@ -6,6 +6,8 @@ const {
   updateProduct,
   deleteProduct,
   getMyProducts,
+  adjustStock,
+  getStockAdjustments,
 } = require("../controllers/catalog.controller");
 
 const router = Router();
@@ -19,5 +21,9 @@ router.get("/products", requireAuth, requireRole("client"), getMyProducts);
 router.post("/products", requireAuth, requireRole("client"), createProduct);
 router.patch("/products/:id", requireAuth, requireRole("client"), updateProduct);
 router.delete("/products/:id", requireAuth, requireRole("client"), deleteProduct);
+
+// Inventory: stock adjustments with an audit trail (owner-scoped).
+router.post("/products/:id/stock", requireAuth, requireRole("client"), adjustStock);
+router.get("/stock-adjustments", requireAuth, requireRole("client"), getStockAdjustments);
 
 module.exports = router;

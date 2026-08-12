@@ -3,57 +3,28 @@
 /**
  * VENDOR STORE — client-side state for the vendor portal.
  *
- * Seeded from the data layer (lib/data). All mutations flow through this
- * provider so swapping the internals to real API calls later requires no
- * UI changes. Every mutation is validated and inventory changes are
- * journaled as StockAdjustment entries (audit trail).
+ * Fully backed by the real Recruweb API (no mock data):
+ *   - products         GET  /api/catalog/products
+ *   - adjustments      GET  /api/catalog/stock-adjustments
+ *   - adjustStock      POST /api/catalog/products/:id/stock
+ *   - profile          GET  /api/client/profile
+ *   - saveProfile      PUT  /api/client/profile
+ *
+ * SWR keeps everything cached and revalidated; mutations refresh the
+ * affected caches so every page stays in sync.
  */
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
+import useSWR from "swr";
+import { api, apiFetcher, ApiError } from "@/lib/api/client";
 import { validatePhone } from "@/lib/validation/phone";
-import {
-  getCompanyProfile,
-  getProducts,
-  getStockAdjustments,
-} from "@/lib/data";
-import type {
-  CompanyProfile,
-  Product,
-  ProductInput,
-  StockAdjustment,
-  StockAdjustmentType,
-} from "@/lib/types";
+import type { CompanyProfile, StockAdjustment, StockAdjustmentType } from "@/lib/types";
 
 /* ------------------------------ validation ------------------------------ */
 
 export interface ValidationResult {
   ok: boolean;
   errors: Record<string, string>;
-}
-
-export function validateProductInput(input: ProductInput): ValidationResult {
-  const errors: Record<string, string> = {};
-  const name = input.name.trim();
-  if (name.length < 3) errors.name = "Name must be at least 3 characters.";
-  if (name.length > 120) errors.name = "Name must be under 120 characters.";
-  if (!input.category.trim()) errors.category = "Choose a category.";
-  if (!Number.isFinite(input.price) || input.price <= 0)
-    errors.price = "Selling price must be greater than 0.";
-  if (!Number.isFinite(input.mrp) || input.mrp <= 0)
-    errors.mrp = "MRP must be greater than 0.";
-  if (!errors.price && !errors.mrp && input.price > input.mrp)
-    errors.price = "Selling price cannot exceed MRP.";
-  if (!Number.isInteger(input.stock) || input.stock < 0)
-    errors.stock = "Stock must be a whole number of 0 or more.";
-  if (input.price > 10000000) errors.price = "Price looks unrealistic.";
-  return { ok: Object.keys(errors).length === 0, errors };
 }
 
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
@@ -86,167 +57,229 @@ export function validateCompanyProfile(p: CompanyProfile): ValidationResult {
   return { ok: Object.keys(errors).length === 0, errors };
 }
 
+/* ------------------------------ API shapes ------------------------------ */
+
+interface ApiProduct {
+  id: string;
+  name: string;
+  brand: string | null;
+  price: number;
+  mrp: number | null;
+  stock: number;
+  sku: string;
+  status: string;
+  images: string[];
+  category: { name: string } | null;
+}
+
+interface ApiAdjustment {
+  id: string;
+  product_id: string | null;
+  product_name: string;
+  type: StockAdjustmentType;
+  delta: number;
+  resulting_stock: number;
+  note: string;
+  created_at: string;
+}
+
+/** Product shape the inventory UI works with (mapped from the API). */
+export interface InventoryProduct {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  mrp: number | null;
+  stock: number;
+  status: string;
+  sku: string;
+  image: string | null;
+}
+
+export const EMPTY_PROFILE: CompanyProfile = {
+  companyName: "",
+  legalName: "",
+  tagline: "",
+  about: "",
+  contactName: "",
+  email: "",
+  phone: "",
+  website: "",
+  gstin: "",
+  pan: "",
+  addressLine: "",
+  city: "",
+  state: "",
+  pincode: "",
+  bankName: "",
+  accountNumber: "",
+  ifsc: "",
+  categories: [],
+};
+
 /* -------------------------------- context ------------------------------- */
 
 export const LOW_STOCK_THRESHOLD = 150;
 
 interface VendorStore {
-  products: Product[];
+  products: InventoryProduct[];
   adjustments: StockAdjustment[];
   profile: CompanyProfile;
-  addProduct: (input: ProductInput) => { ok: boolean; errors: Record<string, string> };
-  updateProduct: (id: string, input: ProductInput) => { ok: boolean; errors: Record<string, string> };
-  deleteProduct: (id: string) => void;
+  /** true while the first load of products/adjustments is in flight */
+  inventoryLoading: boolean;
+  inventoryError: string | null;
+  /** true while the first load of the profile is in flight */
+  profileLoading: boolean;
   adjustStock: (
     productId: string,
     type: StockAdjustmentType,
-    delta: number,
+    qty: number,
     note: string
-  ) => { ok: boolean; error?: string };
-  saveProfile: (profile: CompanyProfile) => { ok: boolean; errors: Record<string, string> };
+  ) => Promise<{ ok: boolean; error?: string }>;
+  saveProfile: (profile: CompanyProfile) => Promise<{ ok: boolean; errors: Record<string, string> }>;
 }
 
 const VendorContext = createContext<VendorStore | null>(null);
 
-function nowStamp() {
-  return new Date().toISOString();
-}
-
 export function VendorProvider({ children }: { children: ReactNode }) {
-  const [products, setProducts] = useState<Product[]>(() => getProducts().map((p) => ({ ...p })));
-  const [adjustments, setAdjustments] = useState<StockAdjustment[]>(() =>
-    getStockAdjustments().map((a) => ({ ...a }))
-  );
-  const [profile, setProfile] = useState<CompanyProfile>(() => ({ ...getCompanyProfile() }));
-  const [seq, setSeq] = useState(1007);
-  const [adjSeq, setAdjSeq] = useState(3022);
+  const {
+    data: productData,
+    error: productError,
+    isLoading: productsLoading,
+    mutate: mutateProducts,
+  } = useSWR<{ products: ApiProduct[] }>("/api/catalog/products?page=1&pageSize=50", apiFetcher);
 
-  const addProduct = useCallback(
-    (input: ProductInput) => {
-      const result = validateProductInput(input);
-      if (!result.ok) return result;
-      const id = `P-${seq}`;
-      setSeq((s) => s + 1);
-      const product: Product = {
-        id,
-        name: input.name.trim(),
-        category: input.category.trim(),
-        price: Math.round(input.price),
-        mrp: Math.round(input.mrp),
-        stock: input.stock,
-        status: input.status,
-        rating: 0,
-        unitsSold: 0,
-        launchedAt: nowStamp().slice(0, 10),
-        vendor: profile.companyName,
-        image: input.image || "/products/placeholder.png",
-      };
-      setProducts((prev) => [product, ...prev]);
-      if (input.stock > 0) {
-        const adj: StockAdjustment = {
-          id: `ADJ-${adjSeq}`,
-          productId: id,
-          productName: product.name,
-          type: "restock",
-          delta: input.stock,
-          resultingStock: input.stock,
-          note: "Initial stock on product creation",
-          at: nowStamp(),
-        };
-        setAdjSeq((s) => s + 1);
-        setAdjustments((prev) => [adj, ...prev]);
-      }
-      return result;
-    },
-    [seq, adjSeq, profile.companyName]
+  const {
+    data: adjData,
+    error: adjError,
+    isLoading: adjLoading,
+    mutate: mutateAdjustments,
+  } = useSWR<{ adjustments: ApiAdjustment[] }>("/api/catalog/stock-adjustments", apiFetcher);
+
+  const {
+    data: profileData,
+    isLoading: profileLoading,
+    mutate: mutateProfile,
+  } = useSWR<{ profile: CompanyProfile }>("/api/client/profile", apiFetcher);
+
+  const products = useMemo<InventoryProduct[]>(
+    () =>
+      (productData?.products ?? [])
+        .filter((p) => p.status !== "archived")
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          category: p.category?.name ?? p.brand ?? "—",
+          price: Number(p.price),
+          mrp: p.mrp == null ? null : Number(p.mrp),
+          stock: p.stock,
+          status: p.status,
+          sku: p.sku,
+          image: p.images?.[0] ?? null,
+        })),
+    [productData]
   );
 
-  const updateProduct = useCallback((id: string, input: ProductInput) => {
-    const result = validateProductInput(input);
-    if (!result.ok) return result;
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              name: input.name.trim(),
-              category: input.category.trim(),
-              price: Math.round(input.price),
-              mrp: Math.round(input.mrp),
-              stock: input.stock,
-              status: input.status,
-              image: input.image || p.image,
-            }
-          : p
-      )
-    );
-    return result;
-  }, []);
-
-  const deleteProduct = useCallback((id: string) => {
-    setProducts((prev) => prev.filter((p) => p.id !== id));
-  }, []);
+  const adjustments = useMemo<StockAdjustment[]>(
+    () =>
+      (adjData?.adjustments ?? []).map((a) => ({
+        id: a.id,
+        productId: a.product_id ?? "",
+        productName: a.product_name,
+        type: a.type,
+        delta: a.delta,
+        resultingStock: a.resulting_stock,
+        note: a.note || "—",
+        at: a.created_at,
+      })),
+    [adjData]
+  );
 
   const adjustStock = useCallback(
-    (productId: string, type: StockAdjustmentType, delta: number, note: string) => {
-      if (!Number.isInteger(delta) || delta === 0)
-        return { ok: false, error: "Quantity must be a non-zero whole number." };
-      const product = products.find((p) => p.id === productId);
-      if (!product) return { ok: false, error: "Product not found." };
-      const signed = type === "restock" ? Math.abs(delta) : -Math.abs(delta);
-      const resulting = product.stock + signed;
-      if (resulting < 0)
-        return {
-          ok: false,
-          error: `Cannot remove ${Math.abs(signed)} units — only ${product.stock} in stock.`,
-        };
-      setProducts((prev) =>
-        prev.map((p) => (p.id === productId ? { ...p, stock: resulting } : p))
-      );
-      const adj: StockAdjustment = {
-        id: `ADJ-${adjSeq}`,
-        productId,
-        productName: product.name,
-        type,
-        delta: signed,
-        resultingStock: resulting,
-        note: note.trim() || "—",
-        at: nowStamp(),
-      };
-      setAdjSeq((s) => s + 1);
-      setAdjustments((prev) => [adj, ...prev]);
-      return { ok: true };
+    async (productId: string, type: StockAdjustmentType, qty: number, note: string) => {
+      if (!Number.isInteger(qty) || qty <= 0) {
+        return { ok: false, error: "Quantity must be a whole number greater than 0." };
+      }
+      try {
+        await api(`/api/catalog/products/${productId}/stock`, {
+          method: "POST",
+          body: { type, qty, note },
+        });
+        await Promise.all([mutateProducts(), mutateAdjustments()]);
+        return { ok: true };
+      } catch (e) {
+        const message =
+          e instanceof ApiError
+            ? e.fields?.qty ?? e.fields?.type ?? e.message
+            : "Could not adjust stock.";
+        return { ok: false, error: message };
+      }
     },
-    [products, adjSeq]
+    [mutateProducts, mutateAdjustments]
   );
 
-  const saveProfile = useCallback((next: CompanyProfile) => {
-    const result = validateCompanyProfile(next);
-    if (!result.ok) return result;
-    setProfile({
-      ...next,
-      companyName: next.companyName.trim(),
-      email: next.email.trim(),
-      phone: validatePhone(next.phone).normalized ?? next.phone.trim(),
-      gstin: next.gstin.trim().toUpperCase(),
-      pan: next.pan.trim().toUpperCase(),
-      ifsc: next.ifsc.trim().toUpperCase(),
-    });
-    return result;
-  }, []);
+  const saveProfile = useCallback(
+    async (next: CompanyProfile) => {
+      const result = validateCompanyProfile(next);
+      if (!result.ok) return result;
+      try {
+        const res = await api<{ profile: CompanyProfile }>("/api/client/profile", {
+          method: "PUT",
+          body: {
+            ...next,
+            companyName: next.companyName.trim(),
+            email: next.email.trim(),
+            phone: validatePhone(next.phone).normalized ?? next.phone.trim(),
+            gstin: next.gstin.trim().toUpperCase(),
+            pan: next.pan.trim().toUpperCase(),
+            ifsc: next.ifsc.trim().toUpperCase(),
+          },
+        });
+        await mutateProfile(res, { revalidate: false });
+        return { ok: true, errors: {} };
+      } catch (e) {
+        if (e instanceof ApiError && e.fields) return { ok: false, errors: e.fields };
+        return {
+          ok: false,
+          errors: { form: e instanceof ApiError ? e.message : "Could not save your profile." },
+        };
+      }
+    },
+    [mutateProfile]
+  );
 
-  const value = useMemo(
+  const value = useMemo<VendorStore>(
     () => ({
       products,
       adjustments,
-      profile,
-      addProduct,
-      updateProduct,
-      deleteProduct,
+      profile: profileData?.profile ?? EMPTY_PROFILE,
+      inventoryLoading: (productsLoading && !productData) || (adjLoading && !adjData),
+      inventoryError:
+        productError instanceof ApiError
+          ? productError.message
+          : adjError instanceof ApiError
+            ? adjError.message
+            : productError || adjError
+              ? "Could not load inventory."
+              : null,
+      profileLoading: profileLoading && !profileData,
       adjustStock,
       saveProfile,
     }),
-    [products, adjustments, profile, addProduct, updateProduct, deleteProduct, adjustStock, saveProfile]
+    [
+      products,
+      adjustments,
+      profileData,
+      productsLoading,
+      productData,
+      adjLoading,
+      adjData,
+      productError,
+      adjError,
+      profileLoading,
+      adjustStock,
+      saveProfile,
+    ]
   );
 
   return <VendorContext.Provider value={value}>{children}</VendorContext.Provider>;

@@ -14,6 +14,7 @@ const express = require("express");
     const adminRoutes   = require("./routes/admin.routes");
     const crmRoutes     = require("./routes/crm.routes");
     const clientRoutes  = require("./routes/client.routes");
+    const publicRoutes  = require("./routes/public.routes");
     const { adminRouter: reportsAdminRouter, fieldRouter: reportsFieldRouter } = require("./routes/reports.routes");
     const { userRouter: notificationsUserRouter, adminRouter: notificationsAdminRouter } = require("./routes/notifications.routes");
 
@@ -66,6 +67,7 @@ app.use("/api/auth",          authRoutes);
     app.use("/api/field",         fieldRoutes);
     app.use("/api/admin",         adminRoutes);
     app.use("/api/client",        clientRoutes);
+    app.use("/api/public",        publicRoutes);
     app.use("/api/field/crm",     crmRoutes);
     app.use("/api/admin/reports", reportsAdminRouter);
     app.use("/api/field/reports", reportsFieldRouter);

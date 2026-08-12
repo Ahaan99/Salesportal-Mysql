@@ -56,7 +56,7 @@ import Link from "next/link";
                 Vendor portal
               </Link>
               <Link href="/field" className="transition-colors hover:text-ink-foreground">
-                Field portal
+                Field sales portal
               </Link>
               <Link href="/admin" className="transition-colors hover:text-ink-foreground">
                 Super admin

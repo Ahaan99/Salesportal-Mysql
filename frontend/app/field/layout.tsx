@@ -65,12 +65,12 @@ const titles: Record<string, string> = {
 export default function FieldLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { displayName } = useUser();
-  const title = titles[pathname] ?? "Field Portal";
+  const title = titles[pathname] ?? "Field Sales Portal";
   return (
     <PortalShell
       nav={nav}
       title={title}
-      roleLabel="Field Portal"
+      roleLabel="Field Sales Portal"
       userName={displayName}
     >
       {children}
