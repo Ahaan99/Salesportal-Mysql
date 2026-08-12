@@ -11,32 +11,6 @@ A full-stack, three-tier sales portal: **Admin command center**, **Client portal
 
 ---
 
-## Screenshots
-
-### Landing page
-
-![Landing page](docs/screenshots/landing.png)
-
-### Authentication
-
-| Login | Sign up | Email verification |
-| ----- | ------- | ------------------ |
-| ![Login](docs/screenshots/login.png) | ![Sign up](docs/screenshots/signup.png) | ![Email verification](docs/screenshots/verify-email.png) |
-
-### Admin — Command Center
-
-![Admin dashboard](docs/screenshots/admin-dashboard.png)
-
-### Client — Vendor Portal
-
-![Client dashboard](docs/screenshots/client-dashboard.png)
-
-### Field Officer — My Day
-
-![Field officer dashboard](docs/screenshots/field-dashboard.png)
-
----
-
 ## Demo login credentials (three tiers)
 
 | Role              | Email                          | Password        | Portal    |
